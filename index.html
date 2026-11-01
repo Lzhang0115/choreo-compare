@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Choreo Compare</title>
+  <meta name="description" content="Compare your dance practice side by side with the official choreography, synced automatically by the music.">
+  <meta name="theme-color" content="#0f0d14">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🪞</text></svg>">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>Choreo Compare</h1>
+    <span class="tag">Videos stay on this device. Nothing is uploaded.</span>
+  </header>
+
+  <!-- Step 1: pick videos -->
+  <section id="loader" class="loader">
+    <p class="intro">Load your practice video and the official dance video. They'll be lined up automatically by the music.</p>
+    <div class="drops">
+      <label class="drop" id="drop-practice" data-role="practice">
+        <input type="file" accept="video/*,.mov,.mp4,.m4v,.webm,.mkv" hidden>
+        <span class="drop-icon" aria-hidden="true">🎥</span>
+        <span class="drop-title">Your practice video</span>
+        <span class="drop-file">Tap to choose, or drop a file here</span>
+      </label>
+      <label class="drop" id="drop-reference" data-role="reference">
+        <input type="file" accept="video/*,.mov,.mp4,.m4v,.webm,.mkv" hidden>
+        <span class="drop-icon" aria-hidden="true">⭐</span>
+        <span class="drop-title">Official choreo video</span>
+        <span class="drop-file">Tap to choose, or drop a file here</span>
+      </label>
+    </div>
+    <p class="hint">Tip: a fixed-camera "dance practice" upload works best as the official video. Download it as an MP4 once and share the file with the group.</p>
+  </section>
+
+  <!-- Step 2: compare -->
+  <section id="player" class="player" hidden>
+    <div class="panels" id="panels">
+      <figure class="panel" data-role="practice">
+        <figcaption>
+          <span class="panel-title">Practice</span>
+          <span class="panel-actions">
+            <button class="chip" data-act="mirror" title="Mirror (M)">⇋ Mirror</button>
+            <button class="chip" data-act="zoom-reset" title="Reset zoom">Reset zoom</button>
+          </span>
+        </figcaption>
+        <div class="stage">
+          <div class="pan"><video playsinline preload="auto"></video></div>
+          <div class="stage-msg" hidden></div>
+        </div>
+        <div class="manual-controls" hidden>
+          <button class="chip" data-step="-1">−1s</button>
+          <button class="chip" data-step="-0.0333">◀ frame</button>
+          <button class="chip" data-step="0.0333">frame ▶</button>
+          <button class="chip" data-step="1">+1s</button>
+        </div>
+      </figure>
+      <figure class="panel" data-role="reference">
+        <figcaption>
+          <span class="panel-title">Official</span>
+          <span class="panel-actions">
+            <button class="chip" data-act="mirror" title="Mirror (N)">⇋ Mirror</button>
+            <button class="chip" data-act="zoom-reset" title="Reset zoom">Reset zoom</button>
+          </span>
+        </figcaption>
+        <div class="stage">
+          <div class="pan"><video playsinline preload="auto"></video></div>
+          <div class="stage-msg" hidden></div>
+        </div>
+        <div class="manual-controls" hidden>
+          <button class="chip" data-step="-1">−1s</button>
+          <button class="chip" data-step="-0.0333">◀ frame</button>
+          <button class="chip" data-step="0.0333">frame ▶</button>
+          <button class="chip" data-step="1">+1s</button>
+        </div>
+      </figure>
+    </div>
+
+    <div class="timeline">
+      <div class="track" id="track">
+        <div class="loop-region" id="loop-region" hidden></div>
+        <input type="range" id="scrub" min="0" max="1" step="0.001" value="0" aria-label="Position">
+      </div>
+      <div class="times">
+        <span id="t-practice">0:00.0</span>
+        <span id="t-reference" class="muted">official 0:00.0</span>
+        <span id="t-duration" class="muted">/ 0:00</span>
+      </div>
+    </div>
+
+    <div class="controls">
+      <div class="group">
+        <button class="btn" id="back5" title="Back 5 s (←)">−5s</button>
+        <button class="btn" id="frame-back" title="Previous frame (,)">◀|</button>
+        <button class="btn primary" id="play" title="Play / pause (Space)">▶</button>
+        <button class="btn" id="frame-fwd" title="Next frame (.)">|▶</button>
+        <button class="btn" id="fwd5" title="Forward 5 s (→)">+5s</button>
+      </div>
+      <div class="group">
+        <label class="field">Speed
+          <select id="speed">
+            <option value="0.25">0.25×</option>
+            <option value="0.5">0.5×</option>
+            <option value="0.75">0.75×</option>
+            <option value="1" selected>1×</option>
+          </select>
+        </label>
+        <label class="field">Sound
+          <select id="audio">
+            <option value="reference" selected>Official</option>
+            <option value="practice">Practice</option>
+            <option value="both">Both</option>
+            <option value="none">Mute</option>
+          </select>
+        </label>
+      </div>
+      <div class="group">
+        <button class="btn" id="loop-a" title="Loop start (A)">A</button>
+        <button class="btn" id="loop-b" title="Loop end (B)">B</button>
+        <button class="btn" id="loop-clear" title="Clear loop (L)" disabled>Clear loop</button>
+      </div>
+      <div class="group">
+        <button class="btn" id="layout" title="Switch side-by-side / stacked">Stack</button>
+        <button class="btn" id="fullscreen" title="Fullscreen (F)">⛶</button>
+        <button class="btn" id="change-videos">Change videos</button>
+      </div>
+    </div>
+
+    <div class="syncbar">
+      <div class="sync-status" id="sync-status">Analyzing music…</div>
+      <div class="group">
+        <span class="field-label">Fine-tune</span>
+        <button class="btn sm" data-nudge="-0.0333" title="Official 1 frame earlier ([)">−1f</button>
+        <button class="btn sm" data-nudge="-0.01">−10ms</button>
+        <span class="offset" id="offset">+0.000s</span>
+        <button class="btn sm" data-nudge="0.01">+10ms</button>
+        <button class="btn sm" data-nudge="0.0333" title="Official 1 frame later (])">+1f</button>
+      </div>
+      <div class="group">
+        <button class="btn sm" id="next-match" title="If the sync snapped to the wrong chorus, try the next-best match" disabled>Try next match</button>
+        <button class="btn sm" id="resync-here" title="Re-sync using the music around the current point (for videos with several runs)" disabled>Re-sync from here</button>
+        <button class="btn sm" id="manual">Manual sync</button>
+      </div>
+    </div>
+
+    <details class="help">
+      <summary>Shortcuts &amp; tips</summary>
+      <ul>
+        <li><kbd>Space</kbd> play/pause · <kbd>←</kbd>/<kbd>→</kbd> 5 s · <kbd>,</kbd>/<kbd>.</kbd> one frame · <kbd>A</kbd>/<kbd>B</kbd> set loop · <kbd>L</kbd> clear loop</li>
+        <li><kbd>M</kbd> mirror practice · <kbd>N</kbd> mirror official · <kbd>[</kbd>/<kbd>]</kbd> nudge sync one frame · <kbd>F</kbd> fullscreen</li>
+        <li>Zoom into a member: scroll or pinch on a video, drag to move, double-click to reset.</li>
+        <li>If your recording has several runs that restart the song, go to a later run and press <b>Re-sync from here</b>.</li>
+        <li>If the auto-sync is off, press <b>Manual sync</b>, line up a moment (e.g. a clap or the first beat) on both videos, then <b>Lock sync</b>.</li>
+      </ul>
+    </details>
+  </section>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
