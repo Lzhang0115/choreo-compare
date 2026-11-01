@@ -224,7 +224,36 @@ function applyCandidate(i) {
 // ---------------------------------------------------------------- sync engine
 
 function refTarget() { return P.currentTime + state.offset; }
-let drift = 0; // smoothed (official - target) while playing
+
+// Drift control. The video whose sound you're hearing always plays at
+// exactly the chosen speed; only the other (silent) video is nudged to keep
+// up. Nudges are small (≤4%) and only start when the videos are clearly
+// apart (>40 ms), stopping once they're back within 10 ms, so most of the
+// time both play at exactly the chosen speed.
+const DRIFT_START = 0.04;
+const DRIFT_STOP = 0.01;
+const DRIFT_JUMP = 0.35;  // further apart than this: just jump
+const MAX_NUDGE = 0.04;
+let drift = 0;            // smoothed (official - expected official time)
+let correcting = false;
+let lastCheck = 0;
+let lastJump = 0;
+
+/** Which video gets nudged: the one you're not listening to. */
+function follower() { return els.audio.value === 'reference' ? P : R; }
+
+function setRates(pRate, rRate) {
+  // Only touch playbackRate when it actually changes: some browsers
+  // (Safari especially) glitch the audio every time it's set.
+  if (Math.abs(P.playbackRate - pRate) > 1e-4) P.playbackRate = pRate;
+  if (Math.abs(R.playbackRate - rRate) > 1e-4) R.playbackRate = rRate;
+}
+
+function resetDrift() {
+  drift = 0;
+  correcting = false;
+  setRates(state.rate, state.rate);
+}
 
 function refInRange(t) { return t >= 0 && (!R.duration || t < R.duration - 0.03); }
 
@@ -248,21 +277,41 @@ function syncReference(force = false) {
   if (state.playing) {
     if (R.paused) {
       R.currentTime = t;
-      R.playbackRate = state.rate;
+      resetDrift();
       R.play().catch(() => {});
       return;
     }
-    // currentTime readings jitter by a few ms from frame to frame, so smooth
-    // the measured drift before reacting to it.
-    const raw = R.currentTime - t;
-    drift = Math.abs(raw - drift) > 0.2 ? raw : drift * 0.8 + raw * 0.2;
-    if (force || Math.abs(raw) > 0.3) {
-      R.currentTime = t;
-      R.playbackRate = state.rate;
-      drift = 0;
+    if (P.seeking || R.seeking) return;
+    const now = performance.now();
+    if (!force && now - lastCheck < 100) return; // ~10 checks per second is plenty
+    lastCheck = now;
+
+    // currentTime readings jitter a little, so smooth before reacting.
+    const raw = R.currentTime - t; // > 0: official is ahead of practice
+    drift = Math.abs(raw - drift) > 0.2 ? raw : drift * 0.7 + raw * 0.3;
+
+    if (force || Math.abs(raw) > DRIFT_JUMP) {
+      // Way off (just started, or one video stalled): jump the follower.
+      // Don't jump more than about once a second, or a device that can't
+      // decode a video fast enough would stutter constantly.
+      if (force || now - lastJump > 1000) {
+        lastJump = now;
+        if (follower() === P) P.currentTime = clamp(R.currentTime - state.offset, 0, P.duration || 0);
+        else R.currentTime = t;
+        resetDrift();
+      }
+      return;
+    }
+    if (!correcting && Math.abs(drift) > DRIFT_START) correcting = true;
+    if (correcting && Math.abs(drift) < DRIFT_STOP) correcting = false;
+    if (!correcting) return setRates(state.rate, state.rate);
+    const nudge = clamp(Math.abs(drift) * 2, 0.005, MAX_NUDGE);
+    if (follower() === P) {
+      // Official is ahead -> practice catches up by going slightly faster.
+      setRates(state.rate * (1 + Math.sign(drift) * nudge), state.rate);
     } else {
-      // Gently speed up / slow down to catch up without a visible jump.
-      R.playbackRate = state.rate * (1 - clamp(drift * 3, -0.12, 0.12));
+      // Official is ahead -> official slows slightly.
+      setRates(state.rate, state.rate * (1 - Math.sign(drift) * nudge));
     }
   } else if (force || Math.abs(R.currentTime - t) > 0.004) {
     R.currentTime = t;
@@ -277,8 +326,7 @@ function play() {
     P.currentTime = 0;
   }
   state.playing = true;
-  P.playbackRate = state.rate;
-  R.playbackRate = state.rate;
+  resetDrift();
   P.play().catch((e) => { toast(`Can't play the practice video: ${e.message}`); pause(); });
   // Start the official video inside this click so phones allow its sound.
   if (state.manual) {
@@ -295,6 +343,7 @@ function pause() {
   state.playing = false;
   P.pause();
   R.pause();
+  resetDrift();
   els.play.textContent = '▶';
   syncReference(true);
 }
@@ -310,6 +359,11 @@ function step(dt) {
   if (state.playing) pause();
   seek(P.currentTime + dt);
 }
+
+// Add ?debug to the URL to see each video's real speed and the drift live.
+const debugEl = new URLSearchParams(location.search).has('debug')
+  ? Object.assign(document.body.appendChild(document.createElement('pre')), { className: 'debug' })
+  : null;
 
 function tick() {
   const dur = P.duration || 0;
@@ -327,6 +381,13 @@ function tick() {
   els.tPractice.textContent = fmt(P.currentTime);
   els.tReference.textContent = state.manual ? `official ${fmt(R.currentTime)}` : `official ${fmt(refTarget())}`;
   els.tDuration.textContent = `/ ${fmt(dur)}`;
+  if (debugEl) {
+    debugEl.textContent =
+      `practice ${P.currentTime.toFixed(3)}s @ ${P.playbackRate.toFixed(3)}×\n` +
+      `official ${R.currentTime.toFixed(3)}s @ ${R.playbackRate.toFixed(3)}×\n` +
+      `drift ${(drift * 1000).toFixed(0)} ms${correcting ? ' (nudging ' + (follower() === P ? 'practice' : 'official') + ')' : ''}\n` +
+      `chosen speed ${state.rate}×`;
+  }
   requestAnimationFrame(tick);
 }
 requestAnimationFrame(tick);
@@ -349,7 +410,7 @@ window.addEventListener('pointerup', () => (state.scrubbing = false));
 
 els.speed.addEventListener('change', () => {
   state.rate = Number(els.speed.value);
-  P.playbackRate = R.playbackRate = state.rate;
+  resetDrift();
 });
 
 function applyAudio() {
@@ -357,7 +418,7 @@ function applyAudio() {
   P.muted = !(a === 'practice' || a === 'both');
   R.muted = !(a === 'reference' || a === 'both');
 }
-els.audio.addEventListener('change', applyAudio);
+els.audio.addEventListener('change', () => { applyAudio(); resetDrift(); });
 applyAudio();
 
 function updateLoop() {

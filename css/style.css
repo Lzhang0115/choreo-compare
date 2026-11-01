@@ -141,3 +141,9 @@ kbd {
   background: var(--surface-2); border: 1px solid var(--border); padding: 10px 16px; border-radius: 10px;
   box-shadow: 0 8px 30px rgba(0,0,0,.4); font-size: 14px; max-width: calc(100vw - 32px); z-index: 10;
 }
+
+.debug {
+  position: fixed; right: 8px; top: 8px; z-index: 20; margin: 0; padding: 8px 10px;
+  font: 12px/1.4 ui-monospace, monospace; background: rgba(0,0,0,.8); color: #9f9;
+  border: 1px solid var(--border); border-radius: 8px; pointer-events: none;
+}
