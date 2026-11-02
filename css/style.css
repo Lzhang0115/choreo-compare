@@ -36,6 +36,7 @@ body {
   -webkit-background-clip: text; background-clip: text; color: transparent;
 }
 .tag { color: var(--muted); font-size: 13px; }
+.version { margin-left: auto; opacity: .7; }
 
 /* ---------- Loader ---------- */
 .loader { max-width: 860px; margin: 24px auto 0; }

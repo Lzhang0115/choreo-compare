@@ -1,5 +1,5 @@
 // Runs the audio analysis off the main thread so the page stays responsive.
-import { onsetFeatures, findOffsets, ENV_RATE } from './sync.js';
+import { onsetFeatures, findOffsets, ENV_RATE } from './sync.js?v=3';
 
 let practiceFeat = null;
 let referenceFeat = null;

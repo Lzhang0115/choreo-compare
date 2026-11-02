@@ -1,4 +1,6 @@
-import { decodeAudioMono } from './sync.js';
+// Bump ?v= in index.html, here, and in sync-worker.js on every release so
+// browsers don't keep running an old cached copy.
+import { decodeAudioMono } from './sync.js?v=3';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -98,7 +100,7 @@ function loadSaved() {
 
 // ---------------------------------------------------------------- worker
 
-const worker = new Worker(new URL('./sync-worker.js', import.meta.url), { type: 'module' });
+const worker = new Worker(new URL('./sync-worker.js?v=3', import.meta.url), { type: 'module' });
 const pending = new Map();
 let nextId = 1;
 worker.onmessage = ({ data }) => {
@@ -148,6 +150,8 @@ function startCompare() {
   }
   state.candidates = [];
   state.candIndex = 0;
+  tempoWarned = false;
+  corrections = 0;
   state.loopA = state.loopB = null;
   updateLoop();
   const saved = loadSaved();
@@ -225,34 +229,38 @@ function applyCandidate(i) {
 
 function refTarget() { return P.currentTime + state.offset; }
 
-// Drift control. The video whose sound you're hearing always plays at
-// exactly the chosen speed; only the other (silent) video is nudged to keep
-// up. Nudges are small (≤4%) and only start when the videos are clearly
-// apart (>40 ms), stopping once they're back within 10 ms, so most of the
-// time both play at exactly the chosen speed.
-const DRIFT_START = 0.04;
-const DRIFT_STOP = 0.01;
-const DRIFT_JUMP = 0.35;  // further apart than this: just jump
-const MAX_NUDGE = 0.04;
+// Drift control. Both videos ALWAYS play at exactly the chosen speed:
+// playbackRate is never used for corrections. If the two drift apart (e.g.
+// one video stutters while decoding), the video you're NOT listening to is
+// jumped back into place, at most about once a second. The video you're
+// hearing is never touched.
+const DRIFT_FIX = 0.035;  // > 35 ms (about 1 frame) apart: re-align
 let drift = 0;            // smoothed (official - expected official time)
-let correcting = false;
 let lastCheck = 0;
 let lastJump = 0;
+let seekLead = 0.03;      // learned: how far behind a jumped video lands (seek latency)
+let pendingLeadCheck = false;
+let corrections = 0;
+const driftLog = [];      // [wall s, drift s] between corrections, to spot tempo mismatches
+let tempoWarned = false;
 
-/** Which video gets nudged: the one you're not listening to. */
+/** Which video gets re-aligned: the one you're not listening to. */
 function follower() { return els.audio.value === 'reference' ? P : R; }
-
-function setRates(pRate, rRate) {
-  // Only touch playbackRate when it actually changes: some browsers
-  // (Safari especially) glitch the audio every time it's set.
-  if (Math.abs(P.playbackRate - pRate) > 1e-4) P.playbackRate = pRate;
-  if (Math.abs(R.playbackRate - rRate) > 1e-4) R.playbackRate = rRate;
-}
 
 function resetDrift() {
   drift = 0;
-  correcting = false;
-  setRates(state.rate, state.rate);
+  driftLog.length = 0;
+  if (P.playbackRate !== state.rate) P.playbackRate = state.rate;
+  if (R.playbackRate !== state.rate) R.playbackRate = state.rate;
+}
+
+/** Jump the follower so the two line up again. */
+function realign() {
+  // Aim slightly ahead: a playing video lands a little late after a jump.
+  const lead = state.playing ? seekLead * state.rate : 0;
+  if (follower() === P) P.currentTime = clamp(R.currentTime - state.offset + lead, 0, P.duration || 0);
+  else R.currentTime = refTarget() + lead;
+  resetDrift();
 }
 
 function refInRange(t) { return t >= 0 && (!R.duration || t < R.duration - 0.03); }
@@ -290,28 +298,34 @@ function syncReference(force = false) {
     const raw = R.currentTime - t; // > 0: official is ahead of practice
     drift = Math.abs(raw - drift) > 0.2 ? raw : drift * 0.7 + raw * 0.3;
 
-    if (force || Math.abs(raw) > DRIFT_JUMP) {
-      // Way off (just started, or one video stalled): jump the follower.
-      // Don't jump more than about once a second, or a device that can't
-      // decode a video fast enough would stutter constantly.
-      if (force || now - lastJump > 1000) {
-        lastJump = now;
-        if (follower() === P) P.currentTime = clamp(R.currentTime - state.offset, 0, P.duration || 0);
-        else R.currentTime = t;
-        resetDrift();
-      }
+    if (pendingLeadCheck && now - lastJump > 400) {
+      // Learn the seek latency from where the last jump actually landed.
+      pendingLeadCheck = false;
+      const behind = follower() === P ? raw : -raw; // > 0: follower still behind
+      seekLead = clamp(seekLead + behind * 0.8, 0, 0.4);
+    }
+
+    if (force || (Math.abs(drift) > DRIFT_FIX && now - lastJump > 1000)) {
+      lastJump = now;
+      if (!force) corrections++;
+      pendingLeadCheck = true;
+      realign();
       return;
     }
-    if (!correcting && Math.abs(drift) > DRIFT_START) correcting = true;
-    if (correcting && Math.abs(drift) < DRIFT_STOP) correcting = false;
-    if (!correcting) return setRates(state.rate, state.rate);
-    const nudge = clamp(Math.abs(drift) * 2, 0.005, MAX_NUDGE);
-    if (follower() === P) {
-      // Official is ahead -> practice catches up by going slightly faster.
-      setRates(state.rate * (1 + Math.sign(drift) * nudge), state.rate);
-    } else {
-      // Official is ahead -> official slows slightly.
-      setRates(state.rate, state.rate * (1 - Math.sign(drift) * nudge));
+
+    // If drift keeps growing steadily between corrections, the two
+    // recordings run at different tempos (e.g. the music was played at a
+    // different speed during practice). Tell the user instead of hiding it.
+    driftLog.push([now / 1000, raw]);
+    if (driftLog.length > 80) driftLog.shift();
+    if (!tempoWarned && driftLog.length >= 50) {
+      const n = driftLog.length;
+      const [t0, d0] = driftLog[0], [t1, d1] = driftLog[n - 1];
+      const ratePerSec = (d1 - d0) / (t1 - t0);
+      if (t1 - t0 > 4 && Math.abs(ratePerSec) > 0.004) {
+        tempoWarned = true;
+        toast(`Heads up: the two videos run at slightly different speeds (${(Math.abs(ratePerSec) * 100).toFixed(1)}%). Was the music played faster/slower in one of them?`, 8000);
+      }
     }
   } else if (force || Math.abs(R.currentTime - t) > 0.004) {
     R.currentTime = t;
@@ -385,7 +399,7 @@ function tick() {
     debugEl.textContent =
       `practice ${P.currentTime.toFixed(3)}s @ ${P.playbackRate.toFixed(3)}×\n` +
       `official ${R.currentTime.toFixed(3)}s @ ${R.playbackRate.toFixed(3)}×\n` +
-      `drift ${(drift * 1000).toFixed(0)} ms${correcting ? ' (nudging ' + (follower() === P ? 'practice' : 'official') + ')' : ''}\n` +
+      `drift ${(drift * 1000).toFixed(0)} ms · re-aligned ${corrections}× (moves ${follower() === P ? 'practice' : 'official'})\n` +
       `chosen speed ${state.rate}×`;
   }
   requestAnimationFrame(tick);
