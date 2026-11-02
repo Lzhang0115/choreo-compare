@@ -1,6 +1,7 @@
 // Bump ?v= in index.html, here, and in sync-worker.js on every release so
 // browsers don't keep running an old cached copy.
-import { decodeAudioMono } from './sync.js?v=3';
+import { decodeAudioMono } from './sync.js?v=4';
+import { initDancers } from './members.js?v=4';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -43,6 +44,18 @@ const panel = Object.fromEntries(ROLES.map((r) => {
 }));
 const P = panel.practice.video;  // master clock
 const R = panel.reference.video; // follows P with an offset
+
+// Extension points used by the dancer features (members.js).
+const hooks = {
+  tick: [],            // called every animation frame
+  videosLoaded: [],    // new pair of videos loaded
+  videosUnloaded: [],  // user went back to pick other videos
+  offsetChanged: [],   // sync offset changed
+  mirrorChanged: [],
+  pointer: null,       // (phase, role, event, [x,y]) => true to take over a drag
+  tap: null,           // (role, [x,y]) => tapped a video without dragging
+  lockView: null,      // (role) => true when the zoom is driven automatically
+};
 
 const state = {
   files: { practice: null, reference: null },
@@ -100,7 +113,7 @@ function loadSaved() {
 
 // ---------------------------------------------------------------- worker
 
-const worker = new Worker(new URL('./sync-worker.js?v=3', import.meta.url), { type: 'module' });
+const worker = new Worker(new URL('./sync-worker.js?v=4', import.meta.url), { type: 'module' });
 const pending = new Map();
 let nextId = 1;
 worker.onmessage = ({ data }) => {
@@ -163,6 +176,7 @@ function startCompare() {
   els.loader.hidden = true;
   els.player.hidden = false;
   analyze(saved);
+  for (const f of hooks.videosLoaded) f();
 }
 
 async function analyze(saved) {
@@ -395,6 +409,7 @@ function tick() {
   els.tPractice.textContent = fmt(P.currentTime);
   els.tReference.textContent = state.manual ? `official ${fmt(R.currentTime)}` : `official ${fmt(refTarget())}`;
   els.tDuration.textContent = `/ ${fmt(dur)}`;
+  for (const f of hooks.tick) f();
   if (debugEl) {
     debugEl.textContent =
       `practice ${P.currentTime.toFixed(3)}s @ ${P.playbackRate.toFixed(3)}×\n` +
@@ -488,6 +503,7 @@ document.addEventListener('fullscreenchange', () => els.player.classList.toggle(
 $('#change-videos').addEventListener('click', () => {
   pause();
   state.analysisId++;
+  for (const f of hooks.videosUnloaded) f();
   els.player.hidden = true;
   els.loader.hidden = false;
 });
@@ -495,6 +511,7 @@ $('#change-videos').addEventListener('click', () => {
 // ---------------------------------------------------------------- sync controls
 
 function updateOffset() {
+  for (const f of hooks.offsetChanged) f();
   const o = state.offset;
   els.offset.textContent = `${o >= 0 ? '+' : '−'}${Math.abs(o).toFixed(3)}s`;
   els.offset.title = 'Official video time minus practice video time';
@@ -581,6 +598,7 @@ function toggleMirror(r) {
   state.mirror[r] = !state.mirror[r];
   applyMirror();
   save();
+  for (const f of hooks.mirrorChanged) f();
 }
 
 for (const r of ROLES) {
@@ -604,19 +622,30 @@ for (const r of ROLES) {
     apply();
   }
   function resetZoom() { z.s = 1; z.x = 0; z.y = 0; apply(); }
+  Object.assign(panel[r], { z, apply, resetZoom });
+  const locked = () => hooks.lockView?.(r);
   const local = (e) => { const b = stage.getBoundingClientRect(); return [e.clientX - b.left, e.clientY - b.top]; };
 
   stage.addEventListener('wheel', (e) => {
     e.preventDefault();
+    if (locked()) return;
     const [x, y] = local(e);
     zoomAt(x, y, Math.exp(-e.deltaY * 0.0015));
   }, { passive: false });
 
   const pointers = new Map();
   let pinch = null;
+  let hooked = false;   // a drag taken over by hooks.pointer (e.g. drawing an ignore area)
+  let down = null;      // for telling taps from drags
   stage.addEventListener('pointerdown', (e) => {
     stage.setPointerCapture(e.pointerId);
-    pointers.set(e.pointerId, local(e));
+    const pt = local(e);
+    if (!pointers.size) {
+      down = { x: pt[0], y: pt[1], t: performance.now(), moved: false };
+      hooked = !!hooks.pointer?.('down', r, e, pt);
+    }
+    pointers.set(e.pointerId, pt);
+    if (hooked) return;
     stage.classList.add('grabbing');
     if (pointers.size === 2) {
       const [a, b] = [...pointers.values()];
@@ -628,6 +657,9 @@ for (const r of ROLES) {
     const prev = pointers.get(e.pointerId);
     const cur = local(e);
     pointers.set(e.pointerId, cur);
+    if (down && Math.hypot(cur[0] - down.x, cur[1] - down.y) > 6) down.moved = true;
+    if (hooked) { hooks.pointer('move', r, e, cur); return; }
+    if (locked()) return;
     if (pointers.size === 1) {
       z.x += cur[0] - prev[0];
       z.y += cur[1] - prev[1];
@@ -643,13 +675,20 @@ for (const r of ROLES) {
     }
   });
   const up = (e) => {
+    const pt = pointers.get(e.pointerId) || local(e);
     pointers.delete(e.pointerId);
+    if (!pointers.size) {
+      if (hooked) hooks.pointer('up', r, e, pt);
+      else if (e.type === 'pointerup' && down && !down.moved && performance.now() - down.t < 500) hooks.tap?.(r, pt);
+      hooked = false;
+      down = null;
+    }
     if (pointers.size < 2) pinch = null;
     if (!pointers.size) stage.classList.remove('grabbing');
   };
   stage.addEventListener('pointerup', up);
   stage.addEventListener('pointercancel', up);
-  stage.addEventListener('dblclick', resetZoom);
+  stage.addEventListener('dblclick', () => { if (!locked()) resetZoom(); });
   new ResizeObserver(apply).observe(stage);
 }
 
@@ -692,5 +731,7 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
+initDancers({ panel, P, R, state, hooks, toast, roles: ROLES, pairKey: () => storageKey(), fmt });
+
 // Expose for debugging / automated tests.
-window.__cc = { state, P, R, syncReference };
+window.__cc = { state, P, R, syncReference, hooks, panel };

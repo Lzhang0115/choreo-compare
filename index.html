@@ -7,13 +7,13 @@
   <meta name="description" content="Compare your dance practice side by side with the official choreography, synced automatically by the music.">
   <meta name="theme-color" content="#0f0d14">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🪞</text></svg>">
-  <link rel="stylesheet" href="css/style.css?v=3">
+  <link rel="stylesheet" href="css/style.css?v=4">
 </head>
 <body>
   <header class="topbar">
     <h1>Choreo Compare</h1>
     <span class="tag">Videos stay on this device. Nothing is uploaded.</span>
-    <span class="tag version">v3</span>
+    <span class="tag version">v4</span>
   </header>
 
   <!-- Step 1: pick videos -->
@@ -82,6 +82,7 @@
     <div class="timeline">
       <div class="track" id="track">
         <div class="loop-region" id="loop-region" hidden></div>
+        <canvas class="track-strip" id="track-strip" hidden title="Where the member is followed: solid = seen, faded = hidden/predicted"></canvas>
         <input type="range" id="scrub" min="0" max="1" step="0.001" value="0" aria-label="Position">
       </div>
       <div class="times">
@@ -146,6 +147,49 @@
       </div>
     </div>
 
+    <div class="dancerbar" id="dancerbar">
+      <div class="dancer-status" id="dancer-status">Follow a member with automatic close-ups, or overlay the official formation on yours.</div>
+      <div class="group" id="dancer-start">
+        <button class="btn" id="find-dancers">Find dancers</button>
+        <button class="btn sm" id="ignore-mode-pre" title="Drag a box over mirrors, posters or people who aren't dancing">Ignore area</button>
+      </div>
+      <div class="group" id="dancer-progress" hidden>
+        <progress id="dancer-progress-bar" max="1" value="0"></progress>
+        <button class="btn sm" id="dancer-cancel">Cancel</button>
+      </div>
+      <div class="dancer-tools" id="dancer-tools" hidden>
+        <div class="group">
+          <label class="field">Member
+            <select id="member-select"></select>
+          </label>
+          <button class="btn sm" id="member-add" title="Follow another member">+ Add</button>
+          <button class="btn sm" id="member-rename">Rename</button>
+          <button class="btn sm" id="member-delete">Delete</button>
+        </div>
+        <div class="group">
+          <button class="btn sm toggle" id="closeup" title="Zoom both videos onto the member (C)">Close-up</button>
+          <label class="field">Zoom
+            <input type="range" id="closeup-zoom" min="0.35" max="0.95" step="0.05" value="0.7">
+          </label>
+          <button class="btn sm toggle active" id="show-boxes" title="Show the dancers that were found (D)">Show dancers</button>
+          <button class="btn sm toggle" id="ignore-mode" title="Drag a box over mirrors, posters or people who aren't dancing">Ignore area</button>
+          <button class="btn sm" id="ignore-clear">Clear ignored</button>
+        </div>
+        <div class="group">
+          <button class="btn sm toggle" id="overlay" title="Show the official video see-through on top of your practice (O)">Formation overlay</button>
+          <label class="field">Official
+            <input type="range" id="overlay-opacity" min="0.05" max="0.95" step="0.05" value="0.45">
+          </label>
+          <label class="field">Scale by
+            <select id="overlay-scale">
+              <option value="spread">formation spread</option>
+              <option value="height">dancer height</option>
+            </select>
+          </label>
+        </div>
+      </div>
+    </div>
+
     <details class="help">
       <summary>Shortcuts &amp; tips</summary>
       <ul>
@@ -154,12 +198,15 @@
         <li>Zoom into a member: scroll or pinch on a video, drag to move, double-click to reset.</li>
         <li>If your recording has several runs that restart the song, go to a later run and press <b>Re-sync from here</b>.</li>
         <li>If the auto-sync is off, press <b>Manual sync</b>, line up a moment (e.g. a clap or the first beat) on both videos, then <b>Lock sync</b>.</li>
+        <li><b>Follow a member:</b> press <b>Find dancers</b>, then tap the member in your practice video and the same member in the official video. If the close-up ever follows the wrong person, pause and tap the right one.</li>
+        <li><b>Mirrors:</b> press <b>Ignore area</b> and drag a box over the mirror so reflections aren't treated as dancers. People whose feet are inside the box are ignored.</li>
+        <li><b>Formation overlay:</b> shows the official video see-through over yours, lined up by the formation's center and size. <kbd>O</kbd> toggles it, <kbd>C</kbd> toggles close-up, <kbd>D</kbd> toggles dancer boxes.</li>
       </ul>
     </details>
   </section>
 
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-  <script type="module" src="js/app.js?v=3"></script>
+  <script type="module" src="js/app.js?v=4"></script>
 </body>
 </html>

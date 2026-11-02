@@ -38,6 +38,37 @@ Everything runs in your browser: videos are never uploaded anywhere.
 Your sync and mirror settings are remembered for each pair of videos on that
 device.
 
+## Following a member (close-ups) and the formation overlay
+
+1. Optional but recommended: press **Ignore area** and drag a box over the
+   studio mirror (and anything else that looks like people, e.g. posters or
+   people sitting at the side). Dancers whose **feet** are inside the box are
+   ignored, so real dancers standing in front of the mirror still count.
+2. Press **Find dancers**. Each video is analyzed once, about 1 to 5 minutes
+   per video depending on your device; you can keep watching meanwhile. After
+   that it's remembered on that device.
+3. Pause, then **tap the member** in your practice video and **tap the same
+   member's part** in the official video. Both videos switch to a close-up
+   that follows them.
+4. If the close-up ever follows the wrong person, pause and tap the right one.
+   Each tap is a correction point. The pink strip under the timeline shows
+   where the member was clearly seen; faded parts are where they were hidden
+   behind others and their position was predicted.
+5. **+ Add** lets each member of the group save themselves; switch between them
+   with the Member menu.
+
+**Formation overlay** shows the official video see-through on top of your
+practice, shifted and scaled live so the two formations' centers line up.
+"Scale by: formation spread" also matches the formation's size; "dancer
+height" keeps spacing mistakes visible (e.g. your formation being too narrow).
+Works best when both are filmed from the front.
+
+How members are recognized: outfit colors (top and bottom separately), height
+(corrected for distance from the camera), movement, and **formation spot**:
+choreography makes people hide behind each other at the same moments in both
+videos, so each member's position relative to the other video's formation
+tells the tracker where to look after they reappear.
+
 ## Video formats
 
 Works in current Chrome, Edge, Safari, and Firefox. If a video won't play,
@@ -81,9 +112,22 @@ so no copyrighted audio is needed:
 node tests/sync.test.mjs
 ```
 
+Run the member-tracking test. It uses real detector output on a synthetic
+5-dancer scene with a mirror, clutter, crossings and an all-black outfit;
+`tests/dance-gen/` rebuilds the scene:
+
+```bash
+node tests/track.test.mjs
+```
+
+## Third-party
+
+- [MediaPipe Tasks Vision](https://github.com/google-ai-edge/mediapipe) (Apache 2.0), in `vendor/mediapipe/`
+- EfficientDet-Lite2 object detection model from MediaPipe (Apache 2.0), in `models/`
+
 ## Roadmap
 
 - [x] Step 1: synced side-by-side player with auto music sync, mirror, zoom, loops
-- [ ] Step 2: member closeups. Tap a member in your video and the matching idol
-  in the official video, and get auto-following closeups of both side by side
-- [ ] Step 3: stick-figure pose overlay, saved sync per song, "how close" timeline
+- [x] Step 2: member close-ups (tap to follow, tap to correct), ignore areas,
+  formation overlay
+- [ ] Step 3: bird's-eye formation map, stick-figure pose overlay, "how close" timeline
